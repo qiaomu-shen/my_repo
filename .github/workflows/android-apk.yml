@@ -69,6 +69,17 @@ jobs:
           sha256sum apk/phone-motion-dino-controller-v0.1.0-debug.apk \
             > apk/phone-motion-dino-controller-v0.1.0-debug.apk.sha256
 
+      - name: Verify APK signature and manifest metadata
+        if: steps.build.outputs.exit_code == '0'
+        run: |
+          "${ANDROID_HOME}/build-tools/35.0.0/apksigner" verify \
+            --verbose --print-certs \
+            apk/phone-motion-dino-controller-v0.1.0-debug.apk \
+            | tee apk/apksigner-verify.txt
+          "${ANDROID_HOME}/build-tools/35.0.0/aapt" dump badging \
+            apk/phone-motion-dino-controller-v0.1.0-debug.apk \
+            | tee apk/apk-badging.txt
+
       - name: Upload APK as workflow artifact
         if: steps.build.outputs.exit_code == '0'
         uses: actions/upload-artifact@v4
@@ -77,6 +88,8 @@ jobs:
           path: |
             apk/phone-motion-dino-controller-v0.1.0-debug.apk
             apk/phone-motion-dino-controller-v0.1.0-debug.apk.sha256
+            apk/apksigner-verify.txt
+            apk/apk-badging.txt
           if-no-files-found: error
           retention-days: 90
 
@@ -100,7 +113,9 @@ jobs:
             android-app/gradle/wrapper/gradle-wrapper.jar \
             android-app/gradle/wrapper/gradle-wrapper.properties \
             apk/phone-motion-dino-controller-v0.1.0-debug.apk \
-            apk/phone-motion-dino-controller-v0.1.0-debug.apk.sha256
+            apk/phone-motion-dino-controller-v0.1.0-debug.apk.sha256 \
+            apk/apksigner-verify.txt \
+            apk/apk-badging.txt
           if git diff --cached --quiet; then
             echo "No generated files changed."
           else
