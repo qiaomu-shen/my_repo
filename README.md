@@ -24,9 +24,38 @@ This first version intentionally supports **jump only**. It is designed to answe
 
 ```text
 android-app/   Android sensor and UDP sender app
+apk/           Verified installable APK, checksum, and signature report
 receiver/      Cross-platform Python UDP receiver and keyboard output
 docs/          Wire protocol and experiment notes
-.github/       Python checks for the desktop receiver
+.github/       CI tests and reproducible APK build workflow
+```
+
+## Download the installable APK
+
+[Download `phone-motion-dino-controller-v0.1.0-debug.apk`](./apk/phone-motion-dino-controller-v0.1.0-debug.apk?raw=1)
+
+Build information:
+
+- App name: `Dino Jump Controller`
+- Package: `com.qiaomushen.dinojump`
+- Version: `0.1.0` (`versionCode 1`)
+- Minimum Android version: Android 8.0 / API 26
+- Target SDK: API 35
+- Signature: Android debug certificate, verified with APK Signature Scheme v2
+- SHA-256: `717f3d6303fc010d31d412082f4dda81ac49bf97e5dd7ef25b7064f2aaf2c7b8`
+
+Related verification files:
+
+- [`SHA-256 checksum`](./apk/phone-motion-dino-controller-v0.1.0-debug.apk.sha256)
+- [`APK signature report`](./apk/apksigner-verify.txt)
+- [`APK manifest metadata`](./apk/apk-badging.txt)
+
+On the phone, allow installation from the browser or file manager when Android asks, then open the downloaded APK. This is a debug-signed prototype for direct testing, not a Google Play release build.
+
+You can also install it over USB with ADB:
+
+```bash
+adb install -r phone-motion-dino-controller-v0.1.0-debug.apk
 ```
 
 ## 1. Start the desktop receiver
@@ -67,12 +96,11 @@ python dino_receiver.py --dry-run
 
 ## 2. Run the Android app
 
-1. Open the `android-app` directory in Android Studio.
-2. Let Android Studio sync the Gradle project and install missing SDK components.
-3. Run the app on a physical Android phone.
-4. Enter the desktop computer's LAN IP and port `5005`.
-5. Fix the phone firmly at the front of the waist, with minimal wobble.
-6. Press **Start detection**, stand still during the 1.5 second calibration, then make a small jump.
+1. Install the APK above, or open the `android-app` directory in Android Studio and run it from source.
+2. Enter the desktop computer's LAN IP and port `5005`.
+3. Press **Send test jump** to verify phone-to-computer networking.
+4. Fix the phone firmly at the front of the waist, with minimal wobble.
+5. Press **Start detection**, stand still during the 1.5 second calibration, then make a small jump.
 
 Find the computer's LAN IP on Ubuntu with:
 
