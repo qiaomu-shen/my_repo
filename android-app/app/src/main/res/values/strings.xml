@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Dino Jump Controller</string>
+    <string name="title">Phone Motion Dino Controller</string>
+    <string name="subtitle">V0: detect one human jump and send one UDP JUMP event.</string>
+    <string name="computer_ip">Computer LAN IP, e.g. 192.168.1.100</string>
+    <string name="udp_port">UDP port</string>
+    <string name="threshold">Takeoff threshold in m/s²</string>
+    <string name="start_detection">Start detection</string>
+    <string name="stop_detection">Stop detection</string>
+    <string name="send_test_jump">Send test jump</string>
+    <string name="state_stopped">STOPPED</string>
+    <string name="state_calibrating">CALIBRATING — stand still</string>
+    <string name="state_ready">READY</string>
+    <string name="state_cooldown">COOLDOWN</string>
+    <string name="vertical_acceleration">Vertical acceleration: %1$s m/s²</string>
+    <string name="sent_count_initial">Sent jumps: 0</string>
+    <string name="sent_count">Sent jumps: %1$d</string>
+    <string name="network_idle">Network: not started</string>
+    <string name="network_ready">Network: ready</string>
+    <string name="last_send_ok">Last send: sequence %1$d OK</string>
+    <string name="last_send_failed">Last send failed: %1$s</string>
+    <string name="placement_note">Fix the phone firmly at the front of the waist. Keep still during the 1.5 second calibration and use small, safe jumps.</string>
+</resources>
