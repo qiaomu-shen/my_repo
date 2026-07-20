@@ -50,29 +50,60 @@ jobs:
         run: gradle wrapper --gradle-version 8.9 --distribution-type bin
 
       - name: Build installable debug APK
+        id: build
         working-directory: android-app
-        run: ./gradlew --no-daemon clean assembleDebug
+        shell: bash
+        run: |
+          mkdir -p ../apk
+          set +e
+          ./gradlew --no-daemon clean assembleDebug 2>&1 | tee ../apk/gradle-build.log
+          exit_code=${PIPESTATUS[0]}
+          echo "exit_code=${exit_code}" >> "${GITHUB_OUTPUT}"
+          exit 0
 
       - name: Prepare APK and checksum
+        if: steps.build.outputs.exit_code == '0'
         run: |
-          mkdir -p apk
           cp android-app/app/build/outputs/apk/debug/app-debug.apk \
             apk/phone-motion-dino-controller-v0.1.0-debug.apk
           sha256sum apk/phone-motion-dino-controller-v0.1.0-debug.apk \
             > apk/phone-motion-dino-controller-v0.1.0-debug.apk.sha256
 
+      - name: Verify APK signature and manifest metadata
+        if: steps.build.outputs.exit_code == '0'
+        run: |
+          "${ANDROID_HOME}/build-tools/35.0.0/apksigner" verify \
+            --verbose --print-certs \
+            apk/phone-motion-dino-controller-v0.1.0-debug.apk \
+            | tee apk/apksigner-verify.txt
+          "${ANDROID_HOME}/build-tools/35.0.0/aapt" dump badging \
+            apk/phone-motion-dino-controller-v0.1.0-debug.apk \
+            | tee apk/apk-badging.txt
+
       - name: Upload APK as workflow artifact
+        if: steps.build.outputs.exit_code == '0'
         uses: actions/upload-artifact@v4
         with:
           name: phone-motion-dino-controller-v0.1.0-debug
           path: |
             apk/phone-motion-dino-controller-v0.1.0-debug.apk
             apk/phone-motion-dino-controller-v0.1.0-debug.apk.sha256
+            apk/apksigner-verify.txt
+            apk/apk-badging.txt
           if-no-files-found: error
           retention-days: 90
 
+      - name: Upload Gradle build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-gradle-build-log
+          path: apk/gradle-build.log
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Commit APK and Gradle Wrapper to repository
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && steps.build.outputs.exit_code == '0'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -82,10 +113,16 @@ jobs:
             android-app/gradle/wrapper/gradle-wrapper.jar \
             android-app/gradle/wrapper/gradle-wrapper.properties \
             apk/phone-motion-dino-controller-v0.1.0-debug.apk \
-            apk/phone-motion-dino-controller-v0.1.0-debug.apk.sha256
+            apk/phone-motion-dino-controller-v0.1.0-debug.apk.sha256 \
+            apk/apksigner-verify.txt \
+            apk/apk-badging.txt
           if git diff --cached --quiet; then
             echo "No generated files changed."
           else
             git commit -m "Build installable Android APK [skip ci]"
             git push
           fi
+
+      - name: Fail workflow when Gradle build failed
+        if: steps.build.outputs.exit_code != '0'
+        run: exit 1
