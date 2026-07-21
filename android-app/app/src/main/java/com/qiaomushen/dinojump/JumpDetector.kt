@@ -3,18 +3,19 @@ package com.qiaomushen.dinojump
 import kotlin.math.abs
 import kotlin.math.min
 
-/** Detects one complete takeoff-flight-landing cycle and emits only at flight confirmation. */
+/** Detects one complete takeoff-flight-landing cycle and locks out landing impacts. */
 class JumpDetector(
     private var takeoffThreshold: Float = 2.8f,
     private val requiredTakeoffSamples: Int = 2,
-    private val requiredFlightSamples: Int = 5,
-    private val flightMagnitudeThreshold: Float = 3.0f,
+    private val requiredFlightSamples: Int = 3,
+    private val flightMagnitudeThreshold: Float = 4.5f,
     private val landingMagnitudeThreshold: Float = 14.0f,
     private val lateralImpulseThreshold: Float = 0.18f,
 ) {
     enum class State {
         READY,
         CANDIDATE,
+        TAKEOFF,
         FLIGHT,
         LANDING,
         SETTLING,
@@ -38,7 +39,11 @@ class JumpDetector(
         get() = state
 
     val isBlockingLowerPriorityActions: Boolean
-        get() = state == State.FLIGHT || state == State.LANDING || state == State.SETTLING
+        get() =
+            state == State.TAKEOFF ||
+                state == State.FLIGHT ||
+                state == State.LANDING ||
+                state == State.SETTLING
 
     fun reset() {
         state = State.READY
@@ -53,22 +58,27 @@ class JumpDetector(
         takeoffThreshold = value
     }
 
-    fun update(sample: MotionSample): Result {
+    fun update(sample: MotionSample, emitVerticalOnTakeoff: Boolean = false): Result {
         val dtSeconds = lastTimestampNs
             ?.let { ((sample.timestampNs - it).coerceIn(0L, 50_000_000L) / 1_000_000_000f) }
             ?: 0f
         lastTimestampNs = sample.timestampNs
 
         return when (state) {
-            State.READY -> updateReady(sample, dtSeconds)
+            State.READY -> updateReady(sample, dtSeconds, emitVerticalOnTakeoff)
             State.CANDIDATE -> updateCandidate(sample, dtSeconds)
+            State.TAKEOFF -> updateTakeoff(sample)
             State.FLIGHT -> updateFlight(sample)
             State.LANDING -> updateLanding(sample)
             State.SETTLING -> updateSettling(sample)
         }
     }
 
-    private fun updateReady(sample: MotionSample, dtSeconds: Float): Result {
+    private fun updateReady(
+        sample: MotionSample,
+        dtSeconds: Float,
+        emitVerticalOnTakeoff: Boolean,
+    ): Result {
         if (sample.verticalAcceleration >= takeoffThreshold) {
             takeoffSamples += 1
             lateralImpulse += sample.lateralAcceleration * dtSeconds
@@ -81,8 +91,15 @@ class JumpDetector(
         }
 
         if (takeoffSamples >= requiredTakeoffSamples) {
-            state = State.CANDIDATE
             stateEnteredNs = sample.timestampNs
+            if (emitVerticalOnTakeoff) {
+                state = State.TAKEOFF
+                return Result(
+                    state,
+                    buildAction(MotionAction.JUMP_UP, sample, includeLateralConfidence = false),
+                )
+            }
+            state = State.CANDIDATE
         }
         return Result(state)
     }
@@ -105,28 +122,38 @@ class JumpDetector(
                 lateralImpulse >= lateralImpulseThreshold -> MotionAction.JUMP_RIGHT
                 else -> MotionAction.JUMP_UP
             }
-            val confidence = min(
-                0.99f,
-                0.68f +
-                    ((peakVerticalAcceleration - takeoffThreshold).coerceAtLeast(0f) * 0.04f) +
-                    (abs(lateralImpulse) * 0.08f),
-            )
             return Result(
                 state,
-                DetectedAction(
-                    action = action,
-                    phase = ActionPhase.TRIGGER,
-                    confidence = confidence,
-                    timestampNs = sample.timestampNs,
-                    verticalAcceleration = sample.verticalAcceleration,
-                    lateralAcceleration = sample.lateralAcceleration,
-                ),
+                buildAction(action, sample, includeLateralConfidence = true),
             )
         }
 
         if (sample.timestampNs - stateEnteredNs >= 300_000_000L) {
             state = State.READY
             resetCandidate()
+        }
+        return Result(state)
+    }
+
+    private fun updateTakeoff(sample: MotionSample): Result {
+        val elapsedNs = sample.timestampNs - stateEnteredNs
+        val looksAirborne = sample.rawAccelerationMagnitude <= flightMagnitudeThreshold
+        flightSamples = if (looksAirborne) flightSamples + 1 else 0
+
+        if (flightSamples >= requiredFlightSamples) {
+            state = State.FLIGHT
+            stateEnteredNs = sample.timestampNs
+        } else if (
+            elapsedNs >= 120_000_000L &&
+            (sample.rawAccelerationMagnitude >= landingMagnitudeThreshold ||
+                sample.verticalAcceleration >= 4.5f)
+        ) {
+            state = State.LANDING
+            stateEnteredNs = sample.timestampNs
+        } else if (elapsedNs >= 350_000_000L) {
+            state = State.SETTLING
+            stateEnteredNs = sample.timestampNs
+            stableSamples = 0
         }
         return Result(state)
     }
@@ -177,5 +204,26 @@ class JumpDetector(
         flightSamples = 0
         lateralImpulse = 0f
         peakVerticalAcceleration = 0f
+    }
+
+    private fun buildAction(
+        action: MotionAction,
+        sample: MotionSample,
+        includeLateralConfidence: Boolean,
+    ): DetectedAction {
+        val confidence = min(
+            0.99f,
+            0.70f +
+                ((peakVerticalAcceleration - takeoffThreshold).coerceAtLeast(0f) * 0.04f) +
+                (if (includeLateralConfidence) abs(lateralImpulse) * 0.08f else 0f),
+        )
+        return DetectedAction(
+            action = action,
+            phase = ActionPhase.TRIGGER,
+            confidence = confidence,
+            timestampNs = sample.timestampNs,
+            verticalAcceleration = sample.verticalAcceleration,
+            lateralAcceleration = sample.lateralAcceleration,
+        )
     }
 }

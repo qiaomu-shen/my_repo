@@ -7,5 +7,5 @@ The GitHub Actions workflow builds an installable debug APK with Java 17, Gradle
 Generated package:
 
 ```text
-apk/phone-motion-dino-controller-v0.2.0-debug.apk
+apk/phone-motion-dino-controller-v0.2.1-debug.apk
 ```

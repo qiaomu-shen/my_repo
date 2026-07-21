@@ -63,7 +63,10 @@ class MotionRecognizer(
         val actions = mutableListOf<DetectedAction>()
         val jumpEnabled = enabledActions.any { it in JUMP_ACTIONS }
         val jumpResult = if (jumpEnabled) {
-            jumpDetector.update(sample)
+            jumpDetector.update(
+                sample,
+                emitVerticalOnTakeoff = enabledActions == setOf(MotionAction.JUMP_UP),
+            )
         } else {
             jumpDetector.reset()
             JumpDetector.Result(JumpDetector.State.READY)

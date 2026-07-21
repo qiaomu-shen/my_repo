@@ -31,6 +31,23 @@ class MotionRecognizerTest {
     }
 
     @Test
+    fun verticalOnlyActionSpaceEmitsWithoutWaitingForFlight() {
+        val recognizer = MotionRecognizer(calibrationDurationNs = 0L)
+        recognizer.setEnabledActions(setOf(MotionAction.JUMP_UP))
+        var timestamp = 0L
+        recognizer.update(sample(timestamp))
+
+        timestamp += STEP_NS
+        val first = recognizer.update(sample(timestamp, vertical = 4f, rawMagnitude = 13f))
+        timestamp += STEP_NS
+        val second = recognizer.update(sample(timestamp, vertical = 4f, rawMagnitude = 13f))
+
+        assertTrue(first.actions.isEmpty())
+        assertEquals(MotionAction.JUMP_UP, second.actions.single().action)
+        assertEquals(MotionState.JUMP, second.state)
+    }
+
+    @Test
     fun actionOutsideSelectedSpaceIsNotEmitted() {
         val recognizer = MotionRecognizer(calibrationDurationNs = 0L)
         recognizer.setEnabledActions(setOf(MotionAction.RUNNING))

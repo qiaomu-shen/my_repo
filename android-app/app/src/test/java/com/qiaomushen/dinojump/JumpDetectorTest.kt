@@ -7,6 +7,34 @@ import org.junit.Test
 
 class JumpDetectorTest {
     @Test
+    fun verticalOnlyModeEmitsAtTakeoffAndLocksLanding() {
+        val detector = JumpDetector(takeoffThreshold = 2.0f)
+        var timestamp = 0L
+
+        val first = detector.update(
+            sample(timestamp, vertical = 3.5f, rawMagnitude = 13.3f),
+            emitVerticalOnTakeoff = true,
+        )
+        timestamp += STEP_NS
+        val second = detector.update(
+            sample(timestamp, vertical = 3.5f, rawMagnitude = 13.3f),
+            emitVerticalOnTakeoff = true,
+        )
+
+        assertNull(first.action)
+        assertEquals(MotionAction.JUMP_UP, second.action?.action)
+        assertEquals(JumpDetector.State.TAKEOFF, second.state)
+
+        timestamp += 150_000_000L
+        val landing = detector.update(
+            sample(timestamp, vertical = 8f, rawMagnitude = 18f),
+            emitVerticalOnTakeoff = true,
+        )
+        assertNull(landing.action)
+        assertEquals(JumpDetector.State.LANDING, landing.state)
+    }
+
+    @Test
     fun takeoffIsConfirmedByFlightAndLandingCannotRetrigger() {
         val detector = JumpDetector(takeoffThreshold = 2.0f)
         var timestamp = 0L
