@@ -1,64 +1,39 @@
-# Phone Motion Dino Controller
+# Phone Motion Controller
 
-A V0 prototype that turns a waist-mounted Android phone into a low-latency jump controller for Chrome's offline dinosaur game.
-
-```text
-Human takeoff
-  -> Android accelerometer
-  -> orientation-independent jump detector
-  -> UDP JUMP event over local Wi-Fi
-  -> desktop receiver presses Space
-  -> chrome://dino jumps
-```
-
-## Scope
-
-This first version intentionally supports **jump only**. It is designed to answer four questions before adding crouching, lane changes, machine learning, or a custom game:
-
-1. Can a phone fixed at the waist detect takeoff early enough?
-2. Can landing impact be prevented from causing a second trigger?
-3. Is local Wi-Fi + UDP + keyboard injection responsive enough?
-4. Is the interaction reliable during continuous play?
-
-## Repository layout
+An Android waist-mounted motion controller that recognizes jumps, running/high knees, and squats, then sends low-latency UDP actions to a desktop keyboard receiver.
 
 ```text
-android-app/   Android sensor and UDP sender app
-apk/           Verified installable APK, checksum, and signature report
-receiver/      Cross-platform Python UDP receiver and keyboard output
-docs/          Wire protocol and experiment notes
-.github/       CI tests and reproducible APK build workflow
+Accelerometer + gyroscope + rotation vector
+  -> body/world coordinate conversion and calibration
+  -> jump, running, and squat rule experts
+  -> priority arbitration and continuous-action heartbeat
+  -> UDP ACTION event
+  -> desktop KeyDown / KeyUp
 ```
 
-## Download the installable APK
+## Supported actions
 
-[Download `phone-motion-dino-controller-v0.1.0-debug.apk`](./apk/phone-motion-dino-controller-v0.1.0-debug.apk?raw=1)
+| Physical action | Protocol output | Default desktop keys |
+|---|---|---|
+| Vertical jump | `JUMP_UP TRIGGER` | Space |
+| Left jump | `JUMP_LEFT TRIGGER` | Left + Space |
+| Right jump | `JUMP_RIGHT TRIGGER` | Right + Space |
+| Squat | `SQUAT START/UPDATE/STOP` | hold/release Down |
+| Running or high knees | `RUNNING START/UPDATE/STOP` | hold/release Up |
 
-Build information:
+Running and high knees intentionally belong to the same continuous action class.
 
-- App name: `Dino Jump Controller`
-- Package: `com.qiaomushen.dinojump`
-- Version: `0.1.0` (`versionCode 1`)
-- Minimum Android version: Android 8.0 / API 26
-- Target SDK: API 35
-- Signature: Android debug certificate, verified with APK Signature Scheme v2
-- SHA-256: `717f3d6303fc010d31d412082f4dda81ac49bf97e5dd7ef25b7064f2aaf2c7b8`
+## Recognition structure
 
-Related verification files:
+- The jump expert uses a `READY -> CANDIDATE -> FLIGHT -> LANDING -> SETTLING` state machine. It requires flight evidence before emitting a jump, and landing can never emit a second trigger.
+- Jump direction comes from lateral takeoff impulse, not landing impact.
+- The running expert looks for repeated, regular acceleration peaks over a 1.3 second window and applies start/stop hysteresis.
+- The squat expert follows standing, descent, active bottom, rising, and standing phases using short-term vertical integration plus posture change.
+- Arbitration priority is jump, then squat, then running. A confirmed jump stops lower-priority continuous actions.
 
-- [`SHA-256 checksum`](./apk/phone-motion-dino-controller-v0.1.0-debug.apk.sha256)
-- [`APK signature report`](./apk/apksigner-verify.txt)
-- [`APK manifest metadata`](./apk/apk-badging.txt)
+These rule experts establish the runtime and dataset contract. A future causal TCN can replace their scoring logic without changing UDP, key-state safety, or action phases.
 
-On the phone, allow installation from the browser or file manager when Android asks, then open the downloaded APK. This is a debug-signed prototype for direct testing, not a Google Play release build.
-
-You can also install it over USB with ADB:
-
-```bash
-adb install -r phone-motion-dino-controller-v0.1.0-debug.apk
-```
-
-## 1. Start the desktop receiver
+## Start the desktop receiver
 
 Python 3.10 or newer is recommended.
 
@@ -70,95 +45,74 @@ python -m pip install -r requirements.txt
 python dino_receiver.py --port 5005
 ```
 
-Open `chrome://dino` in Chrome and click the game once so that the browser has keyboard focus.
-
-Test the receiver locally before using the phone:
+Focus the controlled game window before moving. Test the receiver locally:
 
 ```bash
 python send_test_jump.py --host 127.0.0.1 --port 5005
 ```
 
-The dinosaur should jump once.
+Use `--dry-run` to verify events without injecting keyboard input. Continuous keys are automatically released after 1500 ms without a phone heartbeat; change this with `--state-timeout-ms`.
 
-### Ubuntu / Linux note
-
-`pynput` works most reliably under X11. Check the current session:
+On Ubuntu, `pynput` works most reliably under X11:
 
 ```bash
 echo $XDG_SESSION_TYPE
 ```
 
-If it prints `wayland` and keyboard injection fails, log out and choose **Ubuntu on Xorg** from the login screen. You can still validate networking with:
+## Run the Android app
 
-```bash
-python dino_receiver.py --dry-run
+Open `android-app` in Android Studio and run it on an Android 8.0 or newer phone.
+
+1. Enter the computer LAN IP and UDP port `5005`.
+2. Press **Send test JUMP_UP** to verify networking.
+3. Select the actions enabled for this session: running, lateral jumps, vertical jump, and/or squat.
+4. Fix the phone firmly at the front center of the waist in portrait orientation.
+5. Press **Start detection** and stand still during the 1.5 second calibration.
+6. Test one action at a time before combining transitions.
+
+Find the computer IP with `hostname -I`. If Ubuntu blocks the port, allow `5005/udp` in the firewall.
+
+The checked-in APK under `apk/` is the legacy jump-only version 0.1.0. Build version 0.2.0 from source to test the multi-action implementation.
+
+## Sensor recordings
+
+Every detection session records processed 100 Hz samples and rule outputs to the app-specific external `recordings` directory. The exact path is displayed in the app. A typical file contains:
+
+```text
+timestamp_ns, vertical/lateral/forward acceleration, raw magnitude,
+gyroscope XYZ/magnitude, tilt, recognizer scores/states, detected actions
 ```
 
-## 2. Run the Android app
+Each row also records the selected action space for that session. Detected actions are diagnostic pseudo-labels, not neural-network ground truth. Before training, recordings should be annotated with the actual action time ranges and split by whole session or person, never by randomly mixed windows.
 
-1. Install the APK above, or open the `android-app` directory in Android Studio and run it from source.
-2. Enter the desktop computer's LAN IP and port `5005`.
-3. Press **Send test jump** to verify phone-to-computer networking.
-4. Fix the phone firmly at the front of the waist, with minimal wobble.
-5. Press **Start detection**, stand still during the 1.5 second calibration, then make a small jump.
+## Initial tuning
 
-Find the computer's LAN IP on Ubuntu with:
+The takeoff threshold remains editable in the app and defaults to `2.8 m/s²`. Other first-pass constants are centralized in `JumpDetector`, `RunningDetector`, and `SquatDetector` so real recordings can drive tuning.
 
-```bash
-hostname -I
-```
+- A jump requires at least two takeoff samples and five low-magnitude flight samples.
+- Continuous actions send a heartbeat every 500 ms.
+- The phone must remain firmly mounted; hand-held movement is outside the supported input contract.
 
-If Ubuntu's firewall blocks packets:
+## Tests
 
-```bash
-sudo ufw allow 5005/udp
-```
-
-## Detector parameters
-
-Initial defaults:
-
-| Parameter | Default | Purpose |
-|---|---:|---|
-| Sampling | about 100 Hz | Early takeoff detection |
-| Threshold | 2.8 m/s² | Required upward linear acceleration |
-| Consecutive samples | 2 | Reject isolated sensor spikes |
-| Cooldown | 850 ms | Reject landing as a second jump |
-| Calibration | 1.5 s | Estimate gravity while standing still |
-
-The detector estimates the gravity vector with a low-pass filter and projects linear acceleration onto it. This makes the vertical signal less dependent on the exact phone orientation than reading a fixed sensor axis.
-
-Tuning guidance:
-
-- Missed jumps: lower the threshold gradually, for example `2.8 -> 2.4 -> 2.0`.
-- Walking causes false triggers: raise it, for example `2.8 -> 3.2`.
-- Landing triggers a second jump: increase cooldown to `950-1100 ms`.
-- Response feels late: slightly lower the threshold before reducing filtering.
-
-## Validation plan
-
-Perform at least 30 isolated jumps and record:
-
-- true human jumps;
-- game jumps;
-- missed detections;
-- duplicate detections;
-- false detections while standing and walking;
-- subjective response delay.
-
-For end-to-end latency, use a second phone at 120 or 240 fps to film both the human and the screen. Device monotonic clocks are useful for local logs but are not automatically synchronized across the phone and computer.
-
-## Run receiver tests
+Receiver tests:
 
 ```bash
 cd receiver
 python -m unittest discover -s tests -v
 ```
 
+Android rule-expert tests:
+
+```bash
+cd android-app
+./gradlew testDebugUnitTest
+```
+
 ## Safety
 
-Use small jumps, a clear floor, supportive shoes, and a secure phone mount. Stop testing if the phone moves inside the holder or if repeated jumping becomes uncomfortable.
+Use small jumps, a clear floor, supportive shoes, and a secure phone mount. Stop if the phone moves in its holder or repeated motion becomes uncomfortable.
 
 ## License
 
-MIT. This repository does not include Chromium or Chrome dinosaur game source code or artwork. It only emits ordinary keyboard input to a locally running game.
+MIT. This repository does not include game source code or artwork; it only emits ordinary keyboard input to a locally running game.

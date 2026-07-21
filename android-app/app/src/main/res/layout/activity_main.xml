@@ -48,11 +48,47 @@
             android:inputType="numberDecimal"
             android:singleLine="true" />
 
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:text="@string/action_space"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <CheckBox
+            android:id="@+id/runningCheckBox"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:checked="true"
+            android:text="@string/action_running" />
+
+        <CheckBox
+            android:id="@+id/lateralJumpCheckBox"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:checked="true"
+            android:text="@string/action_lateral_jump" />
+
+        <CheckBox
+            android:id="@+id/verticalJumpCheckBox"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:checked="true"
+            android:text="@string/action_vertical_jump" />
+
+        <CheckBox
+            android:id="@+id/squatCheckBox"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:checked="true"
+            android:text="@string/action_squat" />
+
         <Button
             android:id="@+id/startButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
+            android:layout_marginTop="12dp"
             android:text="@string/start_detection" />
 
         <Button
@@ -68,6 +104,14 @@
             android:layout_marginTop="28dp"
             android:textSize="20sp"
             android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/actionText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/last_action_initial"
+            android:textSize="16sp" />
 
         <TextView
             android:id="@+id/accelerationText"
@@ -89,6 +133,14 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
             android:text="@string/network_idle" />
+
+        <TextView
+            android:id="@+id/recordingText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/recording_idle"
+            android:textIsSelectable="true" />
 
         <TextView
             android:layout_width="wrap_content"

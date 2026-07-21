@@ -49,14 +49,14 @@ jobs:
         working-directory: android-app
         run: gradle wrapper --gradle-version 8.9 --distribution-type bin
 
-      - name: Build installable debug APK
+      - name: Test and build installable debug APK
         id: build
         working-directory: android-app
         shell: bash
         run: |
           mkdir -p ../apk
           set +e
-          ./gradlew --no-daemon clean assembleDebug 2>&1 | tee ../apk/gradle-build.log
+          ./gradlew --no-daemon clean testDebugUnitTest assembleDebug 2>&1 | tee ../apk/gradle-build.log
           exit_code=${PIPESTATUS[0]}
           echo "exit_code=${exit_code}" >> "${GITHUB_OUTPUT}"
           exit 0
@@ -65,29 +65,29 @@ jobs:
         if: steps.build.outputs.exit_code == '0'
         run: |
           cp android-app/app/build/outputs/apk/debug/app-debug.apk \
-            apk/phone-motion-dino-controller-v0.1.0-debug.apk
-          sha256sum apk/phone-motion-dino-controller-v0.1.0-debug.apk \
-            > apk/phone-motion-dino-controller-v0.1.0-debug.apk.sha256
+            apk/phone-motion-dino-controller-v0.2.0-debug.apk
+          sha256sum apk/phone-motion-dino-controller-v0.2.0-debug.apk \
+            > apk/phone-motion-dino-controller-v0.2.0-debug.apk.sha256
 
       - name: Verify APK signature and manifest metadata
         if: steps.build.outputs.exit_code == '0'
         run: |
           "${ANDROID_HOME}/build-tools/35.0.0/apksigner" verify \
             --verbose --print-certs \
-            apk/phone-motion-dino-controller-v0.1.0-debug.apk \
+            apk/phone-motion-dino-controller-v0.2.0-debug.apk \
             | tee apk/apksigner-verify.txt
           "${ANDROID_HOME}/build-tools/35.0.0/aapt" dump badging \
-            apk/phone-motion-dino-controller-v0.1.0-debug.apk \
+            apk/phone-motion-dino-controller-v0.2.0-debug.apk \
             | tee apk/apk-badging.txt
 
       - name: Upload APK as workflow artifact
         if: steps.build.outputs.exit_code == '0'
         uses: actions/upload-artifact@v4
         with:
-          name: phone-motion-dino-controller-v0.1.0-debug
+          name: phone-motion-dino-controller-v0.2.0-debug
           path: |
-            apk/phone-motion-dino-controller-v0.1.0-debug.apk
-            apk/phone-motion-dino-controller-v0.1.0-debug.apk.sha256
+            apk/phone-motion-dino-controller-v0.2.0-debug.apk
+            apk/phone-motion-dino-controller-v0.2.0-debug.apk.sha256
             apk/apksigner-verify.txt
             apk/apk-badging.txt
           if-no-files-found: error
@@ -112,8 +112,8 @@ jobs:
             android-app/gradlew.bat \
             android-app/gradle/wrapper/gradle-wrapper.jar \
             android-app/gradle/wrapper/gradle-wrapper.properties \
-            apk/phone-motion-dino-controller-v0.1.0-debug.apk \
-            apk/phone-motion-dino-controller-v0.1.0-debug.apk.sha256 \
+            apk/phone-motion-dino-controller-v0.2.0-debug.apk \
+            apk/phone-motion-dino-controller-v0.2.0-debug.apk.sha256 \
             apk/apksigner-verify.txt \
             apk/apk-badging.txt
           if git diff --cached --quiet; then

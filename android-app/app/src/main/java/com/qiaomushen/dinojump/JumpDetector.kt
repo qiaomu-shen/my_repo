@@ -1,109 +1,181 @@
 package com.qiaomushen.dinojump
 
-import kotlin.math.sqrt
+import kotlin.math.abs
+import kotlin.math.min
 
-/**
- * Orientation-independent V0 jump detector.
- *
- * The accelerometer vector is low-pass filtered to estimate gravity. The
- * remaining linear acceleration is projected onto the gravity direction.
- * Positive projected acceleration corresponds to an upward takeoff impulse.
- */
+/** Detects one complete takeoff-flight-landing cycle and emits only at flight confirmation. */
 class JumpDetector(
-    private var threshold: Float = 2.8f,
-    private val calibrationDurationNs: Long = 1_500_000_000L,
-    private val cooldownNs: Long = 850_000_000L,
-    private val requiredConsecutiveSamples: Int = 2,
-    private val gravityAlpha: Float = 0.98f,
+    private var takeoffThreshold: Float = 2.8f,
+    private val requiredTakeoffSamples: Int = 2,
+    private val requiredFlightSamples: Int = 5,
+    private val flightMagnitudeThreshold: Float = 3.0f,
+    private val landingMagnitudeThreshold: Float = 14.0f,
+    private val lateralImpulseThreshold: Float = 0.18f,
 ) {
     enum class State {
-        CALIBRATING,
         READY,
-        COOLDOWN,
+        CANDIDATE,
+        FLIGHT,
+        LANDING,
+        SETTLING,
     }
 
     data class Result(
         val state: State,
-        val verticalAcceleration: Float,
-        val triggered: Boolean,
+        val action: DetectedAction? = null,
     )
 
-    private var firstTimestampNs: Long? = null
-    private var lastTriggerNs: Long? = null
-    private var gravityX = 0f
-    private var gravityY = 0f
-    private var gravityZ = 0f
-    private var gravityInitialized = false
-    private var consecutiveSamples = 0
+    private var state = State.READY
+    private var stateEnteredNs = 0L
+    private var lastTimestampNs: Long? = null
+    private var takeoffSamples = 0
+    private var flightSamples = 0
+    private var stableSamples = 0
+    private var lateralImpulse = 0f
+    private var peakVerticalAcceleration = 0f
+
+    val currentState: State
+        get() = state
+
+    val isBlockingLowerPriorityActions: Boolean
+        get() = state == State.FLIGHT || state == State.LANDING || state == State.SETTLING
 
     fun reset() {
-        firstTimestampNs = null
-        lastTriggerNs = null
-        gravityX = 0f
-        gravityY = 0f
-        gravityZ = 0f
-        gravityInitialized = false
-        consecutiveSamples = 0
+        state = State.READY
+        stateEnteredNs = 0L
+        lastTimestampNs = null
+        resetCandidate()
+        stableSamples = 0
     }
 
-    fun setThreshold(value: Float) {
+    fun setTakeoffThreshold(value: Float) {
         require(value in 0.5f..15f) { "Threshold must be between 0.5 and 15 m/s²" }
-        threshold = value
+        takeoffThreshold = value
     }
 
-    fun update(
-        accelerationX: Float,
-        accelerationY: Float,
-        accelerationZ: Float,
-        timestampNs: Long,
-    ): Result {
-        val startNs = firstTimestampNs ?: timestampNs.also { firstTimestampNs = it }
+    fun update(sample: MotionSample): Result {
+        val dtSeconds = lastTimestampNs
+            ?.let { ((sample.timestampNs - it).coerceIn(0L, 50_000_000L) / 1_000_000_000f) }
+            ?: 0f
+        lastTimestampNs = sample.timestampNs
 
-        if (!gravityInitialized) {
-            gravityX = accelerationX
-            gravityY = accelerationY
-            gravityZ = accelerationZ
-            gravityInitialized = true
+        return when (state) {
+            State.READY -> updateReady(sample, dtSeconds)
+            State.CANDIDATE -> updateCandidate(sample, dtSeconds)
+            State.FLIGHT -> updateFlight(sample)
+            State.LANDING -> updateLanding(sample)
+            State.SETTLING -> updateSettling(sample)
+        }
+    }
+
+    private fun updateReady(sample: MotionSample, dtSeconds: Float): Result {
+        if (sample.verticalAcceleration >= takeoffThreshold) {
+            takeoffSamples += 1
+            lateralImpulse += sample.lateralAcceleration * dtSeconds
+            peakVerticalAcceleration = maxOf(
+                peakVerticalAcceleration,
+                sample.verticalAcceleration,
+            )
         } else {
-            val motionWeight = 1f - gravityAlpha
-            gravityX = gravityAlpha * gravityX + motionWeight * accelerationX
-            gravityY = gravityAlpha * gravityY + motionWeight * accelerationY
-            gravityZ = gravityAlpha * gravityZ + motionWeight * accelerationZ
+            resetCandidate()
         }
 
-        val linearX = accelerationX - gravityX
-        val linearY = accelerationY - gravityY
-        val linearZ = accelerationZ - gravityZ
-        val gravityNorm = sqrt(
-            gravityX * gravityX + gravityY * gravityY + gravityZ * gravityZ,
-        ).coerceAtLeast(0.001f)
+        if (takeoffSamples >= requiredTakeoffSamples) {
+            state = State.CANDIDATE
+            stateEnteredNs = sample.timestampNs
+        }
+        return Result(state)
+    }
 
-        val verticalAcceleration =
-            (linearX * gravityX + linearY * gravityY + linearZ * gravityZ) / gravityNorm
+    private fun updateCandidate(sample: MotionSample, dtSeconds: Float): Result {
+        lateralImpulse += sample.lateralAcceleration * dtSeconds
+        peakVerticalAcceleration = maxOf(
+            peakVerticalAcceleration,
+            sample.verticalAcceleration,
+        )
 
-        if (timestampNs - startNs < calibrationDurationNs) {
-            consecutiveSamples = 0
-            return Result(State.CALIBRATING, verticalAcceleration, false)
+        val looksAirborne = sample.rawAccelerationMagnitude <= flightMagnitudeThreshold
+        flightSamples = if (looksAirborne) flightSamples + 1 else 0
+
+        if (flightSamples >= requiredFlightSamples) {
+            state = State.FLIGHT
+            stateEnteredNs = sample.timestampNs
+            val action = when {
+                lateralImpulse <= -lateralImpulseThreshold -> MotionAction.JUMP_LEFT
+                lateralImpulse >= lateralImpulseThreshold -> MotionAction.JUMP_RIGHT
+                else -> MotionAction.JUMP_UP
+            }
+            val confidence = min(
+                0.99f,
+                0.68f +
+                    ((peakVerticalAcceleration - takeoffThreshold).coerceAtLeast(0f) * 0.04f) +
+                    (abs(lateralImpulse) * 0.08f),
+            )
+            return Result(
+                state,
+                DetectedAction(
+                    action = action,
+                    phase = ActionPhase.TRIGGER,
+                    confidence = confidence,
+                    timestampNs = sample.timestampNs,
+                    verticalAcceleration = sample.verticalAcceleration,
+                    lateralAcceleration = sample.lateralAcceleration,
+                ),
+            )
         }
 
-        val previousTriggerNs = lastTriggerNs
-        if (previousTriggerNs != null && timestampNs - previousTriggerNs < cooldownNs) {
-            consecutiveSamples = 0
-            return Result(State.COOLDOWN, verticalAcceleration, false)
+        if (sample.timestampNs - stateEnteredNs >= 300_000_000L) {
+            state = State.READY
+            resetCandidate()
         }
+        return Result(state)
+    }
 
-        consecutiveSamples = if (verticalAcceleration >= threshold) {
-            consecutiveSamples + 1
-        } else {
-            0
+    private fun updateFlight(sample: MotionSample): Result {
+        val flightDurationNs = sample.timestampNs - stateEnteredNs
+        val landed = flightDurationNs >= 50_000_000L && (
+            sample.rawAccelerationMagnitude >= landingMagnitudeThreshold ||
+                sample.verticalAcceleration >= 4.5f
+            )
+        if (landed) {
+            state = State.LANDING
+            stateEnteredNs = sample.timestampNs
+        } else if (flightDurationNs >= 900_000_000L) {
+            state = State.SETTLING
+            stateEnteredNs = sample.timestampNs
         }
+        return Result(state)
+    }
 
-        if (consecutiveSamples >= requiredConsecutiveSamples) {
-            consecutiveSamples = 0
-            lastTriggerNs = timestampNs
-            return Result(State.COOLDOWN, verticalAcceleration, true)
+    private fun updateLanding(sample: MotionSample): Result {
+        if (sample.timestampNs - stateEnteredNs >= 40_000_000L) {
+            state = State.SETTLING
+            stateEnteredNs = sample.timestampNs
+            stableSamples = 0
         }
+        return Result(state)
+    }
 
-        return Result(State.READY, verticalAcceleration, false)
+    private fun updateSettling(sample: MotionSample): Result {
+        val stable =
+            abs(sample.verticalAcceleration) < 1.1f &&
+                abs(sample.lateralAcceleration) < 1.3f &&
+                abs(sample.rawAccelerationMagnitude - 9.81f) < 1.6f &&
+                sample.gyroscopeMagnitude < 0.8f
+        stableSamples = if (stable) stableSamples + 1 else 0
+
+        if (stableSamples >= 15 || sample.timestampNs - stateEnteredNs >= 1_500_000_000L) {
+            state = State.READY
+            resetCandidate()
+            stableSamples = 0
+        }
+        return Result(state)
+    }
+
+    private fun resetCandidate() {
+        takeoffSamples = 0
+        flightSamples = 0
+        lateralImpulse = 0f
+        peakVerticalAcceleration = 0f
     }
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Send one test JUMP datagram to the desktop receiver."""
+"""Send one test JUMP_UP ACTION datagram to the desktop receiver."""
 
 from __future__ import annotations
 
@@ -16,7 +16,10 @@ def main() -> int:
     args = parser.parse_args()
 
     payload = {
-        "event": "JUMP",
+        "event": "ACTION",
+        "action": "JUMP_UP",
+        "phase": "TRIGGER",
+        "confidence": 1.0,
         "sequence": 0,
         "phone_time_ns": time.monotonic_ns(),
         "vertical_acceleration": None,
@@ -26,7 +29,7 @@ def main() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
         sock.sendto(encoded, (args.host, args.port))
 
-    print(f"Sent JUMP to udp://{args.host}:{args.port}")
+    print(f"Sent JUMP_UP TRIGGER to udp://{args.host}:{args.port}")
     return 0
 
 

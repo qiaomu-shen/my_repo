@@ -1,1 +1,1 @@
-# No custom ProGuard rules are required for the V0 prototype.
+# No custom ProGuard rules are required for the current prototype.
