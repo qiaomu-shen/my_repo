@@ -1,4 +1,4 @@
-package: name='com.qiaomushen.dinojump' versionCode='2' versionName='0.2.0' platformBuildVersionName='15' platformBuildVersionCode='35' compileSdkVersion='35' compileSdkVersionCodename='15'
+package: name='com.qiaomushen.dinojump' versionCode='3' versionName='0.2.1' platformBuildVersionName='15' platformBuildVersionCode='35' compileSdkVersion='35' compileSdkVersionCodename='15'
 sdkVersion:'26'
 targetSdkVersion:'35'
 uses-permission: name='android.permission.INTERNET'
