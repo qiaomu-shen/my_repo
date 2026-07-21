@@ -1,4 +1,4 @@
-package: name='com.qiaomushen.dinojump' versionCode='1' versionName='0.1.0' platformBuildVersionName='15' platformBuildVersionCode='35' compileSdkVersion='35' compileSdkVersionCodename='15'
+package: name='com.qiaomushen.dinojump' versionCode='2' versionName='0.2.0' platformBuildVersionName='15' platformBuildVersionCode='35' compileSdkVersion='35' compileSdkVersionCodename='15'
 sdkVersion:'26'
 targetSdkVersion:'35'
 uses-permission: name='android.permission.INTERNET'
@@ -94,6 +94,7 @@ application-debuggable
 launchable-activity: name='com.qiaomushen.dinojump.MainActivity'  label='' icon=''
 feature-group: label=''
   uses-feature: name='android.hardware.sensor.accelerometer'
+  uses-feature-not-required: name='android.hardware.sensor.gyroscope'
   uses-feature: name='android.hardware.faketouch'
   uses-implied-feature: name='android.hardware.faketouch' reason='default feature for all apps'
   uses-feature: name='android.hardware.screen.portrait'
